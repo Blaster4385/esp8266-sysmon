@@ -17,5 +17,8 @@ extern int16_t cpuTempGlobal;
 extern int16_t cpuTemp[8];
 extern uint32_t ramMax;
 extern uint32_t ramFree;
+extern String OS;
+extern String KernelVer;
+extern String Uptime;
 
 #endif // __CPU_H__

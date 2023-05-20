@@ -6,6 +6,9 @@ int16_t cpuTempGlobal = defaultValue;
 int16_t cpuTemp[8] = {defaultValue, defaultValue, defaultValue,defaultValue, defaultValue, defaultValue, defaultValue, defaultValue};
 uint32_t ramFree = defaultValue;
 uint32_t ramMax = defaultValue;
+String OS = "";
+String KernelVer = "";
+String Uptime = "";
 
 static int8_t extractArray(String &command, int16_t *array)
 {

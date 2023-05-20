@@ -8,7 +8,4 @@ extern Adafruit_ILI9341 tft;
 extern void gfx1_udpate();
 extern void gfx1_layout();
 
-extern bool gfx1_refresh;
-
-
 #endif
