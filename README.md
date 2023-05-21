@@ -53,3 +53,8 @@ This is a simple ESP8266 based system monitor that can be used to monitor system
 - Run the sysmon.py script on your computer
 
 - Enjoy!
+
+
+## Note for Windows users
+
+Download [Open Hardware Monitor](https://openhardwaremonitor.org/downloads/) and put the OpenHardwareMonitorLib.dll file alongside the sysmon_windows.py file.
