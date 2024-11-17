@@ -1,81 +1,152 @@
 #!/usr/bin/python
 
 import sys
-from datetime import datetime
-from datetime import timedelta
 import psutil
 import serial
-from time import sleep
-import sensors
-import subprocess
-import math
+import platform
+from time import sleep, time
+from datetime import datetime
 import os
 
-CPU_TEMP_PATH = '/sys/devices/pci0000:00/0000:00:18.3/hwmon/hwmon2/temp1_input'
+if platform.system() == "Windows":
+    import win32com.client
 
-file_descriptor = '/dev/ttyUSB0'
-baud_rate = 9600
+# Constants
+FILE_DESCRIPTOR = 'COM3' if platform.system() == 'Windows' else '/dev/ttyUSB0'
+BAUD_RATE = 9600
+SERIAL_TIMEOUT = 1  # Timeout for serial operations in seconds
+CONNECTION_WAIT = 6  # Time to wait for the serial connection to establish
+SEND_INTERVAL = 2  # Interval between sending data in seconds
 
-arduino = serial.Serial(port=file_descriptor, baudrate=baud_rate)
-sleep(6)
+# CPU temperature path for Linux
+#CPU_TEMP_PATH = '/sys/devices/pci0000:00/0000:00:18.3/hwmon/hwmon4/temp1_input'
+CPU_TEMP_PATH = os.environ.get('CPU_TEMP_PATH', '/sys/devices/pci0000:00/0000:00:18.3/hwmon/hwmon3/temp1_input')
 
-def send_command(command):
-    print("sent: " + command)
-    arduino.write(command.encode())
-    sleep(0.1)
-
-def set_time(date_time):
-    curr_time=date_time.strftime('%H:%M:%S')
-    return curr_time
+# Open serial connection
+def open_serial_connection():
+    try:
+        return serial.Serial(port=FILE_DESCRIPTOR, baudrate=BAUD_RATE, timeout=SERIAL_TIMEOUT)
+    except serial.SerialException as e:
+        sys.exit(f"Failed to connect to the serial port: {e}")
 
 
-def set_max():
-    ram_max = int(psutil.virtual_memory().total / (1024.*1024.))
-    # request = 'RamMax=%d\r\n' % ram_max
-    # send_command(request)
-    return ram_max
+# Send command to Arduino
+def send_command(arduino, command):
+    try:
+        arduino.write(command.encode())
+        sleep(0.1)
+    except serial.SerialException as e:
+        print(f"Failed to send command: {e}")
 
-def set_free():
-    ram_free = int(psutil.virtual_memory().free / (1024.*1024.))
-    # request = 'RamFree=%d\r\n' % ram_free
-    # send_command(request)
-    return ram_free
 
-def set_OS():
-    with open('/etc/os-release', 'r') as f:
-        for line in f:
-            if line.startswith('NAME='):
-                OSName = line.split('"')[1]
-                break
-    return OSName
+# Get the current time
+def get_time():
+    return datetime.now().strftime('%H:%M:%S')
 
-def set_kernel_version():
-    with open('/proc/version', 'r') as f:
-        for line in f:
-            Kernel = line.split(' ')[2].split('-')[0]
-            break
-    return Kernel
 
-def set_uptime():
+# Get RAM information
+def get_ram_info():
+    ram = psutil.virtual_memory()
+    return int(ram.total / (1024 * 1024)), int(ram.available / (1024 * 1024))
+
+
+# Get OS name
+def get_os_name():
+    if platform.system() == 'Windows':
+        return platform.system()
+    else:
+        try:
+            with open('/etc/os-release') as f:
+                for line in f:
+                    if line.startswith('NAME='):
+                        return line.split('=')[1].strip().strip('"')
+        except FileNotFoundError:
+            return "Unknown"
+
+
+# Get kernel version
+def get_kernel_version():
+    if platform.system() == 'Windows':
+        return platform.version()
+    else:
+        try:
+            with open('/proc/version') as f:
+                return f.readline().split()[2].split('-')[0]
+        except FileNotFoundError:
+            return "Unknown"
+
+
+# Get system uptime
+def get_uptime():
     uptime_seconds = psutil.boot_time()
     uptime = datetime.now() - datetime.fromtimestamp(uptime_seconds)
-    uptime_hours = int(uptime.total_seconds() // 3600)
-    uptime_minutes = int((uptime.total_seconds() % 3600) // 60)
-    uptime = f"{uptime_hours:02d}:{uptime_minutes:02d}"
-    return uptime
-
-def start():
-    while 1:
-        cpu_temp = int(subprocess.check_output(['cat', CPU_TEMP_PATH]))/1000
-        cpu_pct = psutil.cpu_percent(interval=None, percpu=False)
-        cpu_global = int(cpu_pct)
-        request = "\nCpuTemp="+str(math.trunc(cpu_temp))+",CpuUsage="+str(math.trunc(cpu_global))+",RamMax="+str(set_max())+",RamFree="+str(set_free())+",Time="+str(set_time(datetime.now()))+",OS="+str(set_OS())+",Kernel="+str(set_kernel_version())+",Uptime="+str(set_uptime())
-        send_command(request)
-        sleep(2)
+    hours, remainder = divmod(int(uptime.total_seconds()), 3600)
+    minutes = remainder // 60
+    return f"{hours:02d}:{minutes:02d}"
 
 
+# Get CPU temperature
+def get_cpu_temp():
+    if platform.system() == 'Windows':
+        # For Windows, use WMI to get CPU temperature
+        wmi = win32com.client.Dispatch("WbemScripting.SWbemLocator")
+        service = wmi.ConnectServer(".", "root\cimv2")
+        temperature_info = service.ExecQuery(
+            "SELECT * FROM Win32_TemperatureProbe")
+        for sensor in temperature_info:
+            if sensor.CurrentReading is not None:
+                # Convert from tenths of Kelvin to Celsius
+                return sensor.CurrentReading / 10.0 - 273.15
+        return 0  # Return 0 if there's no temperature sensor data
+    else:
+        try:
+            with open(CPU_TEMP_PATH) as f:
+                return int(f.read().strip()) / 1000
+        except (FileNotFoundError, ValueError):
+            return 0  # Return 0 if there's an error reading CPU temperature
+
+
+# Main data gathering and sending function
+def gather_and_send_data(arduino, ram_max, os_name, kernel_version):
+    while True:
+        start_time = time()
+        try:
+            cpu_temp = int(get_cpu_temp())
+            cpu_usage = int(psutil.cpu_percent(interval=None))
+            _, ram_free = get_ram_info()
+            current_time = get_time()
+            uptime = get_uptime()
+
+            request = (f"\nCpuTemp={cpu_temp},CpuUsage={cpu_usage},RamMax={ram_max},"
+                       f"RamFree={ram_free},Time={current_time},OS={os_name},"
+                       f"Kernel={kernel_version},Uptime={uptime}")
+
+            send_command(arduino, request)
+        except Exception as e:
+            print(f"An error occurred: {e}")
+
+        elapsed_time = time() - start_time
+        if elapsed_time < SEND_INTERVAL:
+            sleep(SEND_INTERVAL - elapsed_time)
+
+
+# Main function to handle program start
 def main():
-    start()
+    arduino = open_serial_connection()
+    sleep(CONNECTION_WAIT)  # Wait for the connection to establish
+
+    ram_max, _ = get_ram_info()
+    os_name = get_os_name()
+    kernel_version = get_kernel_version()
+
+    try:
+        gather_and_send_data(arduino, ram_max, os_name, kernel_version)
+    except KeyboardInterrupt:
+        print("Interrupted by user")
+    finally:
+        if arduino.is_open:
+            arduino.close()
+
 
 if __name__ == "__main__":
     main()
