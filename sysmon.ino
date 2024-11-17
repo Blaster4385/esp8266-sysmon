@@ -20,7 +20,7 @@ static uint32_t rtcTime = 0;
 static uint32_t displayTime = 0;
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   initHardware();
   gfx1_layout();
 }

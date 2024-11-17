@@ -13,10 +13,10 @@ if platform.system() == "Windows":
 
 # Constants
 FILE_DESCRIPTOR = 'COM3' if platform.system() == 'Windows' else '/dev/ttyUSB0'
-BAUD_RATE = 9600
+BAUD_RATE = 115200
 SERIAL_TIMEOUT = 1  # Timeout for serial operations in seconds
 CONNECTION_WAIT = 6  # Time to wait for the serial connection to establish
-SEND_INTERVAL = 2  # Interval between sending data in seconds
+SEND_INTERVAL = 3  # Interval between sending data in seconds
 
 # CPU temperature path for Linux
 #CPU_TEMP_PATH = '/sys/devices/pci0000:00/0000:00:18.3/hwmon/hwmon4/temp1_input'
